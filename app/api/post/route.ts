@@ -1,59 +1,138 @@
+import { randomUUID } from "node:crypto";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { cookies } from "next/headers";
 import jwt from "jsonwebtoken";
-import fs from "fs";
-import path from "path";
+import { prisma } from "@/lib/prisma";
 
-export async function POST(req: Request) {
+const MAX_IMAGES_PER_POST = 10;
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+const IMAGE_EXTENSIONS: Record<string, string> = {
+  "image/jpeg": ".jpg",
+  "image/png": ".png",
+  "image/webp": ".webp",
+  "image/gif": ".gif",
+};
+
+export async function POST(request: Request) {
+  let savedImagePaths: string[] = [];
+
   try {
-    const cookieStore = await cookies();
-    const token = cookieStore.get("token")?.value;
-    if (!token)
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as {
-      userId: string | number;
-    };
-    const currentUserId = Number(decoded.userId);
-
-    const formData = await req.formData();
-    const content = (formData.get("content") as string) || "";
-    const isPublicValue = formData.get("isPublic") === "false" ? false : true;
-    const imageFiles = formData.getAll("images") as File[];
-
-    const savedImageNames: string[] = [];
-
-    const uploadDir = path.join(process.cwd(), "public", "images");
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
+    const secretKey = process.env.JWT_SECRET;
+    if (!secretKey) {
+      return NextResponse.json(
+        { error: "Server configuration error" },
+        { status: 500 },
+      );
     }
 
-    for (const file of imageFiles) {
-      if (file && typeof file === "object" && "arrayBuffer" in file) {
-        const bytes = await file.arrayBuffer();
-        const buffer = Buffer.from(bytes);
+    const token = (await cookies()).get("token")?.value;
+    if (!token) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-        const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-        const filename = uniqueSuffix + "-" + file.name.replace(/\s+/g, "_");
-        const filepath = path.join(uploadDir, filename);
+    let userId: number;
+    try {
+      const decoded = jwt.verify(token, secretKey);
+      const decodedUserId =
+        typeof decoded === "string" ? undefined : decoded.userId;
+      userId = Number(decodedUserId);
+      if (!Number.isSafeInteger(userId) || userId <= 0) {
+        throw new Error("Invalid user ID in token");
+      }
+    } catch {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-        fs.writeFileSync(filepath, buffer);
-        savedImageNames.push(filename);
+    let formData: FormData;
+    try {
+      formData = await request.formData();
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid multipart form data" },
+        { status: 400 },
+      );
+    }
+
+    const contentValue = formData.get("content");
+    const visibilityValue = formData.get("isPublic");
+    const imageValues = formData.getAll("images");
+
+    if (typeof contentValue !== "string" || !contentValue.trim()) {
+      return NextResponse.json(
+        { error: "Post content is required" },
+        { status: 400 },
+      );
+    }
+
+    if (
+      visibilityValue !== null &&
+      visibilityValue !== "true" &&
+      visibilityValue !== "false"
+    ) {
+      return NextResponse.json(
+        { error: "Post visibility is invalid" },
+        { status: 400 },
+      );
+    }
+
+    if (imageValues.length > MAX_IMAGES_PER_POST) {
+      return NextResponse.json(
+        { error: `You can upload up to ${MAX_IMAGES_PER_POST} images` },
+        { status: 400 },
+      );
+    }
+
+    if (imageValues.some((value) => !(value instanceof File))) {
+      return NextResponse.json(
+        { error: "Uploaded images are invalid" },
+        { status: 400 },
+      );
+    }
+
+    const imageFiles = imageValues.filter(
+      (value): value is File => value instanceof File,
+    );
+    for (const image of imageFiles) {
+      if (image.size === 0 || !IMAGE_EXTENSIONS[image.type]) {
+        return NextResponse.json(
+          { error: "Images must be non-empty JPEG, PNG, WebP, or GIF files" },
+          { status: 400 },
+        );
+      }
+      if (image.size > MAX_IMAGE_SIZE) {
+        return NextResponse.json(
+          { error: "Each image must be 5 MB or smaller" },
+          { status: 400 },
+        );
       }
     }
 
-    const imageCreateData = savedImageNames.map((filename) => ({
-      url: filename,
-    }));
+    const uploadDirectory = path.join(process.cwd(), "public", "images");
+    const imageCreateData: { url: string }[] = [];
+
+    if (imageFiles.length > 0) {
+      await mkdir(uploadDirectory, { recursive: true });
+
+      for (const image of imageFiles) {
+        const filename = `${randomUUID()}${IMAGE_EXTENSIONS[image.type]}`;
+        const imagePath = path.join(uploadDirectory, filename);
+        await writeFile(imagePath, Buffer.from(await image.arrayBuffer()), {
+          flag: "wx",
+        });
+        savedImagePaths.push(imagePath);
+        imageCreateData.push({ url: filename });
+      }
+    }
 
     const newPost = await prisma.post.create({
       data: {
-        content,
-        isPublic: isPublicValue,
-        userId: currentUserId,
+        content: contentValue.trim(),
+        isPublic: visibilityValue !== "false",
+        userId,
         images: {
-          create: imageCreateData, // 👈 Relational table ထဲသို့ ပုံများထည့်သွင်းခြင်း
+          create: imageCreateData,
         },
       },
       include: {
@@ -64,9 +143,16 @@ export async function POST(req: Request) {
 
     return NextResponse.json(newPost, { status: 201 });
   } catch (error) {
+    await Promise.all(
+      savedImagePaths.map((imagePath) =>
+        rm(imagePath, { force: true }).catch((cleanupError: unknown) => {
+          console.error("Failed to remove unused post image:", cleanupError);
+        }),
+      ),
+    );
     console.error("Create post error:", error);
     return NextResponse.json(
-      { error: "Internal Server Error" },
+      { error: "Failed to create post" },
       { status: 500 },
     );
   }

@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
+import { getProfileImageSrc } from "@/lib/profile-image";
 
 interface PostCardProps {
   post: {
@@ -10,7 +12,7 @@ interface PostCardProps {
     content: string;
     images?: { id: number; url: string }[];
     isPublic?: boolean;
-    create_at: Date;
+    create_at: Date | string;
     userId: number;
     likes?: { userId: number }[];
     comments?: any[];
@@ -28,6 +30,11 @@ export default function PostCard({ post, user, currentUserId }: PostCardProps) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(post.content);
+
+  const [existingImages, setExistingImages] = useState(post.images ?? []);
+  const [deletedImageIds, setDeletedImageIds] = useState<number[]>([]);
+  const [newFiles, setNewFiles] = useState<File[]>([]);
+
   const [isUpdating, setIsUpdating] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
 
@@ -54,7 +61,8 @@ export default function PostCard({ post, user, currentUserId }: PostCardProps) {
     );
     setLikeCount(initialLikes.length);
     setComments(initialComments);
-  }, [currentUserId, post.likes, post.comments]);
+    setExistingImages(post.images ?? []);
+  }, [currentUserId, post.likes, post.comments, post.images]);
 
   const handleLikeToggle = async () => {
     if (!currentUserId) {
@@ -128,23 +136,56 @@ export default function PostCard({ post, user, currentUserId }: PostCardProps) {
     }
   };
 
+  const handleRemoveExistingImage = (id: number) => {
+    setExistingImages(existingImages.filter((img) => img.id !== id));
+    setDeletedImageIds([...deletedImageIds, id]);
+  };
+
   const handleUpdateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editContent.trim()) return;
+    if (
+      !editContent.trim() &&
+      existingImages.length === 0 &&
+      newFiles.length === 0
+    ) {
+      alert("Post content or at least one image is required");
+      return;
+    }
 
     setIsUpdating(true);
     try {
-      const res = await fetch(`/api/post/delete/${post.id}`, {
+      const formData = new FormData();
+      formData.append("content", editContent);
+      formData.append("deletedImageIds", JSON.stringify(deletedImageIds));
+      newFiles.forEach((file) => {
+        formData.append("images", file);
+      });
+
+      const res = await fetch(`/api/post/${post.id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: editContent }),
+        body: formData,
       });
 
       if (res.ok) {
         setIsEditing(false);
+        setNewFiles([]);
+        setDeletedImageIds([]);
         router.refresh();
       } else {
-        alert("Failed to update post");
+        const contentType = res.headers.get("content-type");
+        if (contentType?.includes("application/json")) {
+          const data: unknown = await res.json();
+          const error =
+            typeof data === "object" &&
+            data !== null &&
+            "error" in data &&
+            typeof data.error === "string"
+              ? data.error
+              : "Failed to update post";
+          alert(error);
+        } else {
+          alert(`Failed to update post (HTTP ${res.status})`);
+        }
       }
     } catch (error) {
       console.error("Update error:", error);
@@ -158,7 +199,7 @@ export default function PostCard({ post, user, currentUserId }: PostCardProps) {
 
     setIsDeleting(true);
     try {
-      const res = await fetch(`/api/post/delete/${post.id}`, {
+      const res = await fetch(`/api/post/${post.id}`, {
         method: "DELETE",
       });
       if (res.ok) {
@@ -173,22 +214,19 @@ export default function PostCard({ post, user, currentUserId }: PostCardProps) {
     }
   };
 
-  const imageList = post.images ?? [];
-
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl shadow-md overflow-hidden transition mb-4">
+    <div className="mx-auto bg-slate-100 border border-slate-300 rounded-2xl shadow-sm overflow-hidden transition mb-4 text-slate-800">
       {/* Post Header */}
-      {post.images && post.images.length > 0 && <p>exist</p>}
       <div className="flex items-center justify-between p-4 pb-2">
         <div className="flex items-center space-x-3 flex-1 min-w-0">
           <Link
             href={user.id ? `/profile/${user.id}` : "#"}
             className="shrink-0"
           >
-            <div className="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-sm shadow overflow-hidden">
+            <div className="w-10 h-10 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-sm shadow-sm overflow-hidden">
               {user.img ? (
                 <img
-                  src={user.img}
+                  src={getProfileImageSrc(user.img)}
                   alt={user.name}
                   className="w-full h-full object-cover"
                 />
@@ -199,17 +237,17 @@ export default function PostCard({ post, user, currentUserId }: PostCardProps) {
           </Link>
           <div className="min-w-0 flex-1">
             <Link href={user.id ? `/profile/${user.id}` : "#"}>
-              <h3 className="text-sm font-semibold text-slate-100 truncate hover:underline">
+              <h3 className="text-sm font-semibold text-slate-900 truncate hover:underline">
                 {user.name}
               </h3>
             </Link>
             <div className="flex items-center space-x-2">
-              <span className="text-xs text-slate-400">
+              <span className="text-xs text-slate-500">
                 {post.create_at && !isNaN(new Date(post.create_at).getTime())
                   ? new Date(post.create_at).toLocaleDateString()
                   : ""}
               </span>
-              <span className="text-[10px] text-slate-500">
+              <span className="text-[10px] text-slate-500 font-medium">
                 {post.isPublic !== false ? "🌐 Public" : "🔒 Private"}
               </span>
             </div>
@@ -220,18 +258,18 @@ export default function PostCard({ post, user, currentUserId }: PostCardProps) {
           <div className="relative ml-2 shrink-0">
             <button
               onClick={() => setShowDropdown(!showDropdown)}
-              className="text-slate-400 hover:text-white w-8 h-8 rounded-full hover:bg-slate-800 transition flex items-center justify-center font-bold text-lg"
+              className="text-slate-600 hover:text-slate-900 w-8 h-8 rounded-full hover:bg-slate-200 transition flex items-center justify-center font-bold text-lg"
             >
               ⋮
             </button>
             {showDropdown && (
-              <div className="absolute right-0 mt-1 w-28 bg-slate-950 border border-slate-800 rounded-lg shadow-xl z-50 overflow-hidden">
+              <div className="absolute right-0 mt-1 w-28 bg-slate-200 border border-slate-300 rounded-xl shadow-md z-50 overflow-hidden">
                 <button
                   onClick={() => {
                     setIsEditing(true);
                     setShowDropdown(false);
                   }}
-                  className="w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-slate-800 transition"
+                  className="w-full text-left px-3 py-2 text-xs text-slate-800 hover:bg-slate-300 transition"
                 >
                   ✏️ Edit
                 </button>
@@ -241,7 +279,7 @@ export default function PostCard({ post, user, currentUserId }: PostCardProps) {
                     handleDelete();
                   }}
                   disabled={isDeleting}
-                  className="w-full text-left px-3 py-2 text-xs text-red-400 hover:bg-slate-800 transition border-t border-slate-800"
+                  className="w-full text-left px-3 py-2 text-xs text-rose-600 hover:bg-rose-100 transition border-t border-slate-300"
                 >
                   {isDeleting ? "Deleting..." : "🗑️ Delete"}
                 </button>
@@ -251,58 +289,137 @@ export default function PostCard({ post, user, currentUserId }: PostCardProps) {
         )}
       </div>
 
-      {/* Post Content & Images */}
+      {/* Post Content & Images / Edit Form */}
       <div className="px-4 py-3 space-y-3">
         {isEditing ? (
-          <form onSubmit={handleUpdateSubmit} className="space-y-3">
+          <form onSubmit={handleUpdateSubmit} className="space-y-4">
             <textarea
               value={editContent}
               onChange={(e) => setEditContent(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-700 p-3 rounded-lg text-sm text-white focus:outline-none"
+              className="w-full bg-slate-200 border border-slate-300 p-3 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-indigo-500"
               rows={3}
             />
-            <div className="flex justify-end space-x-2">
+
+            {/* Existing Images Management */}
+            {existingImages.length > 0 && (
+              <div>
+                <p className="text-[11px] text-slate-600 mb-2">
+                  Existing Images (Click × to remove):
+                </p>
+                <div className="flex gap-2 flex-wrap">
+                  {existingImages.map((img) => {
+                    const normalizedUrl = img.url
+                      .replace(/\\/g, "/")
+                      .replace(/^\/+/, "")
+                      .replace(/^public\//, "");
+                    const imageSrc = /^https?:\/\//i.test(img.url)
+                      ? img.url
+                      : `/${normalizedUrl.startsWith("images/") ? normalizedUrl : `images/${normalizedUrl}`}`;
+
+                    return (
+                      <div
+                        key={img.id}
+                        className="relative w-20 h-20 rounded-lg overflow-hidden border border-slate-300 bg-slate-200"
+                      >
+                        <Image
+                          src={imageSrc}
+                          alt="Post image"
+                          fill
+                          sizes="80px"
+                          className="object-cover"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveExistingImage(img.id)}
+                          className="absolute top-1 right-1 bg-rose-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-[10px] font-bold shadow hover:bg-rose-700"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Add New Images */}
+            <div>
+              <label className="text-[11px] text-slate-600 block mb-1">
+                Add New Images:
+              </label>
+              <input
+                type="file"
+                multiple
+                accept="image/*"
+                onChange={(e) => {
+                  if (e.target.files) {
+                    setNewFiles(Array.from(e.target.files));
+                  }
+                }}
+                className="text-xs text-slate-600 file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 cursor-pointer"
+              />
+            </div>
+
+            <div className="flex justify-end space-x-2 pt-2">
               <button
                 type="button"
-                onClick={() => setIsEditing(false)}
-                className="bg-slate-800 text-slate-300 px-3 py-1.5 rounded-lg text-xs"
+                onClick={() => {
+                  setIsEditing(false);
+                  setEditContent(post.content);
+                  setExistingImages(post.images ?? []);
+                  setNewFiles([]);
+                  setDeletedImageIds([]);
+                }}
+                className="bg-slate-300 hover:bg-slate-400 text-slate-800 px-3 py-1.5 rounded-xl text-xs transition"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={isUpdating}
-                className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-xs"
+                className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-xl text-xs transition disabled:opacity-50"
               >
-                Save
+                {isUpdating ? "Saving..." : "Save Changes"}
               </button>
             </div>
           </form>
         ) : (
           <>
             {post.content && (
-              <p className="text-slate-200 text-sm md:text-base whitespace-pre-wrap">
+              <p className="text-slate-800 text-sm md:text-base whitespace-pre-wrap leading-relaxed">
                 {post.content}
               </p>
             )}
 
             {/* Images Grid */}
-            {imageList && imageList.length > 0 && (
+            {post.images && post.images.length > 0 && (
               <div
-                className={`grid gap-2 mt-3 ${imageList.length === 1 ? "grid-cols-1" : "grid-cols-2"}`}
+                className={`grid gap-2 mt-3 ${post.images.length === 1 ? "grid-cols-1" : "grid-cols-2"}`}
               >
-                {imageList.map((img: any, index: number) => (
-                  <div
-                    key={img.id || index}
-                    className="rounded-lg overflow-hidden border border-slate-800 bg-slate-950"
-                  >
-                    <img
-                      src={`/images/${img.url}`}
-                      alt={`Post image ${index + 1}`}
-                      className="w-full h-48 object-cover hover:scale-105 transition duration-300"
-                    />
-                  </div>
-                ))}
+                {post.images.map((img, index) => {
+                  const normalizedUrl = img.url
+                    .replace(/\\/g, "/")
+                    .replace(/^\/+/, "")
+                    .replace(/^public\//, "");
+                  const imageSrc = /^https?:\/\//i.test(img.url)
+                    ? img.url
+                    : `/${normalizedUrl.startsWith("images/") ? normalizedUrl : `images/${normalizedUrl}`}`;
+
+                  return (
+                    <div
+                      key={img.id}
+                      className="rounded-xl overflow-hidden border border-slate-300 bg-slate-200 relative h-48"
+                    >
+                      <Image
+                        src={imageSrc}
+                        alt={`Post image ${index + 1}`}
+                        fill
+                        sizes="(max-width: 768px) 100vw, 500px"
+                        className="object-cover hover:scale-105 transition duration-300"
+                      />
+                    </div>
+                  );
+                })}
               </div>
             )}
           </>
@@ -310,31 +427,38 @@ export default function PostCard({ post, user, currentUserId }: PostCardProps) {
       </div>
 
       {/* Post Footer */}
-      <div className="px-4 py-2 border-t border-slate-800 flex justify-between items-center text-xs text-slate-400 bg-slate-950/40">
+      <div className="px-4 py-2.5 border-t border-slate-200 flex justify-between items-center text-xs text-slate-600 bg-slate-200/50">
         <button
           onClick={handleLikeToggle}
-          className={`flex items-center space-x-1.5 ${liked ? "text-blue-400 font-bold" : ""}`}
+          className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg hover:bg-slate-300/50 transition ${
+            liked
+              ? "text-indigo-600 font-bold bg-indigo-100"
+              : "hover:text-indigo-600"
+          }`}
         >
-          <span>{liked ? "💙 Liked" : "👍 Like"}</span>
+          <span>{liked ? "💜 Liked" : "👍 Like"}</span>
           {likeCount > 0 && <span>({likeCount})</span>}
         </button>
-        <button onClick={() => setShowComments(!showComments)}>
+        <button
+          onClick={() => setShowComments(!showComments)}
+          className="hover:text-indigo-600 transition px-3 py-1.5 rounded-lg hover:bg-slate-300/50"
+        >
           💬 {comments.length} Comments
         </button>
       </div>
 
       {/* Comments Section */}
       {showComments && (
-        <div className="bg-slate-950 p-4 border-t border-slate-800 space-y-3">
+        <div className="bg-slate-200/60 p-4 border-t border-slate-300 space-y-3">
           {comments
             .filter((c: any) => !c.parentId)
             .map((comment: any) => (
               <div
                 key={comment.id}
-                className="bg-slate-900 border border-slate-800 p-2.5 rounded-lg text-xs space-y-2"
+                className="bg-slate-100 border border-slate-300 p-3 rounded-2xl text-xs space-y-2 shadow-2xs"
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-semibold text-blue-400">
+                  <span className="font-semibold text-indigo-700">
                     {comment.user?.name || "User"}
                   </span>
                   <div className="flex items-center space-x-2">
@@ -343,17 +467,9 @@ export default function PostCard({ post, user, currentUserId }: PostCardProps) {
                         ? new Date(comment.createdAt).toLocaleDateString()
                         : ""}
                     </span>
-                    {Number(comment.userId) === Number(currentUserId) && (
-                      <button
-                        onClick={() => handleDeleteComment(comment.id)}
-                        className="text-red-400 hover:text-red-300 font-bold"
-                      >
-                        Delete
-                      </button>
-                    )}
                   </div>
                 </div>
-                <p className="text-slate-300">{comment.content}</p>
+                <p className="text-slate-800">{comment.content}</p>
 
                 <button
                   onClick={() =>
@@ -361,7 +477,7 @@ export default function PostCard({ post, user, currentUserId }: PostCardProps) {
                       replyingToId === comment.id ? null : comment.id,
                     )
                   }
-                  className="text-blue-400 hover:underline text-[11px]"
+                  className="text-indigo-600 hover:underline text-[11px] font-medium"
                 >
                   Reply
                 </button>
@@ -371,24 +487,34 @@ export default function PostCard({ post, user, currentUserId }: PostCardProps) {
                   .map((reply: any) => (
                     <div
                       key={reply.id}
-                      className="ml-4 mt-2 bg-slate-950 border border-slate-800 p-2 rounded-lg text-xs space-y-1"
+                      className="ml-4 mt-2 bg-slate-200 border border-slate-300 p-2.5 rounded-xl text-xs space-y-1"
                     >
                       <div className="flex items-center justify-between">
-                        <span className="font-semibold text-blue-300">
+                        <span className="font-semibold text-indigo-700">
                           {reply.user?.name || "User"}
                         </span>
                         {Number(reply.userId) === Number(currentUserId) && (
                           <button
                             onClick={() => handleDeleteComment(reply.id)}
-                            className="text-red-400 text-[10px]"
+                            className="text-rose-600 hover:underline text-[10px]"
                           >
                             Delete
                           </button>
                         )}
                       </div>
-                      <p className="text-slate-300">{reply.content}</p>
+                      <p className="text-slate-800">{reply.content}</p>
                     </div>
                   ))}
+
+                {(Number(comment.userId) === Number(currentUserId) ||
+                  Number(currentUserId) === Number(post.userId)) && (
+                  <button
+                    onClick={() => handleDeleteComment(comment.id)}
+                    className="text-rose-600 hover:underline text-[10px] ml-2"
+                  >
+                    Delete
+                  </button>
+                )}
 
                 {replyingToId === comment.id && (
                   <form
@@ -400,11 +526,11 @@ export default function PostCard({ post, user, currentUserId }: PostCardProps) {
                       placeholder="Write a reply..."
                       value={replyContent}
                       onChange={(e) => setReplyContent(e.target.value)}
-                      className="flex-1 bg-slate-950 border border-slate-700 px-2 py-1 rounded text-xs text-white"
+                      className="flex-1 bg-slate-200 border border-slate-300 px-3 py-1.5 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-indigo-500"
                     />
                     <button
                       type="submit"
-                      className="bg-blue-600 text-white px-3 py-1 rounded text-xs"
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-xl text-xs font-medium"
                     >
                       Send
                     </button>
@@ -423,11 +549,11 @@ export default function PostCard({ post, user, currentUserId }: PostCardProps) {
                 placeholder="Write a comment..."
                 value={newComment}
                 onChange={(e) => setNewComment(e.target.value)}
-                className="flex-1 bg-slate-900 border border-slate-700 px-3 py-2 rounded-lg text-xs text-white"
+                className="flex-1 bg-slate-100 border border-slate-300 px-3 py-2 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-indigo-500"
               />
               <button
                 type="submit"
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs"
+                className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-medium shadow-2xs"
               >
                 Send
               </button>

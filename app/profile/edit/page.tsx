@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import jwt from "jsonwebtoken";
 import { prisma } from "@/lib/prisma";
-
+import Navbar from "@/app/component/navBar/nav";
 import ProfileEditForm from "../../component/profile/ProfileEdit";
 export const instant = false;
 export default async function EditProfilePage() {
@@ -57,7 +57,8 @@ export default async function EditProfilePage() {
   }
 
   return (
-    <main className="bg-slate-950 p-6 space-y-6 mx-50">
+    <main className="w-full min-h-screen bg-slate-50 text-slate-900 pb-12">
+      <Navbar />
       <ProfileEditForm user={user} />
     </main>
   );

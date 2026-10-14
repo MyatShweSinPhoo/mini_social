@@ -4,6 +4,8 @@ import { cookies } from "next/headers";
 import jwt from "jsonwebtoken";
 import LogoutButton from "../auth/Logout";
 import AutoLogout from "../../component/autoLogout";
+import NavbarSearchWrapper from "../../component/NavBarSearchWrapper";
+
 export default async function Navbar() {
   await connection();
   const cookieStore = await cookies();
@@ -38,66 +40,69 @@ export default async function Navbar() {
   }
 
   return (
-    <nav className="block w-full max-w-5xl px-4 py-2 mx-auto bg-white bg-opacity-90 sticky top-3 shadow lg:px-8 lg:py-3 backdrop-blur-lg backdrop-saturate-150 z-[9999]">
-      <div className="container flex flex-wrap items-center justify-between mx-auto text-slate-800">
+    // 🛑 w-full ဖြင့် ဘယ်ညာအစအဆုံး အပြည့်ယူထားပြီး Light Theme border နှင့် shadow ကို သုံးထားသည်
+    <nav className="w-full bg-white/95 backdrop-blur-md sticky top-0 shadow-sm border-b border-slate-200 z-[9999] px-6 lg:px-10 py-3">
+      <div className="w-full flex items-center justify-between text-slate-800">
+        {/* Logo */}
         <Link
           href="/"
-          className="mr-4 block cursor-pointer py-1.5 text-base text-slate-800 font-semibold"
+          className="block cursor-pointer text-base text-slate-900 font-bold tracking-tight shrink-0"
         >
           Mini Social
         </Link>
-        <div className="hidden lg:block">
-          <ul className="flex flex-col gap-2 mt-2 mb-4 lg:mb-0 lg:mt-0 lg:flex-row lg:items-center lg:gap-6">
-            <li className="flex items-center p-1 text-sm gap-x-2 text-slate-600">
-              <Link href="/" className="flex items-center">
-                Home
+
+        {/* 🔍 Search Bar (Home Page တွင်သာ ပေါ်မည်) */}
+        <NavbarSearchWrapper />
+
+        {/* Desktop Menu */}
+        <div className="hidden lg:flex items-center gap-6 shrink-0">
+          <Link
+            href="/"
+            className="text-sm font-medium text-slate-600 hover:text-blue-600 transition"
+          >
+            Home
+          </Link>
+
+          {currentUserId ? (
+            <>
+              <AutoLogout />
+              <Link
+                href={`/profile`}
+                className="text-sm font-medium text-slate-600 hover:text-blue-600 transition"
+              >
+                Profile
               </Link>
-            </li>
-
-            {currentUserId ? (
-              <>
-                <AutoLogout />
-
-                <li className="flex items-center p-1 text-sm gap-x-2 text-slate-600">
-                  <Link href={`/profile`} className="flex items-center">
-                    Profile
-                  </Link>
-                </li>
-                <li className="flex items-center p-1 text-sm gap-x-2 text-slate-600">
-                  <LogoutButton />
-                </li>
-              </>
-            ) : (
-              <>
-                <li className="flex items-center p-1 text-sm gap-x-2 text-slate-600">
-                  <Link href="/auth/login" className="flex items-center">
-                    Login
-                  </Link>
-                </li>
-              </>
-            )}
-          </ul>
+              <LogoutButton />
+            </>
+          ) : (
+            <Link
+              href="/auth/login"
+              className="text-sm font-medium text-slate-600 hover:text-blue-600 transition"
+            >
+              Login
+            </Link>
+          )}
         </div>
+
+        {/* Mobile Menu Button */}
         <button
-          className="relative ml-auto h-6 max-h-40px w-6 max-w-40px select-none rounded-lg text-center align-middle text-xs font-medium uppercase text-inherit transition-all hover:bg-transparent focus:bg-transparent active:bg-transparent disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none lg:hidden"
+          className="relative ml-auto h-8 w-8 select-none rounded-lg text-center text-xs font-medium uppercase text-inherit transition-all hover:bg-slate-100 flex items-center justify-center lg:hidden"
           type="button"
         >
-          <span className="absolute transform -translate-x-1/2 -translate-y-1/2 top-1/2 left-1/2">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-6 w-6"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M4 6h16M4 12h16M4 18h16"
-              />
-            </svg>
-          </span>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-6 w-6"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M4 6h16M4 12h16M4 18h16"
+            />
+          </svg>
         </button>
       </div>
     </nav>

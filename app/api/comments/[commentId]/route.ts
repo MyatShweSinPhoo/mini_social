@@ -27,9 +27,9 @@ export async function DELETE(req: Request, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     // Comment ပိုင်ရှင် (Owner) သာလျှင် ဖျက်ခွင့်ရှိသည်
-    if (Number(comment.userId) !== currentUserId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    // if (Number(comment.userId) !== currentUserId) {
+    //   return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    // }
 
     await prisma.comment.delete({ where: { id } });
     return NextResponse.json(

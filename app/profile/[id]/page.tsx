@@ -54,6 +54,10 @@ export default async function UserProfilePage({
           content: true,
           create_at: true,
           userId: true,
+          isPublic: true,
+          images: {
+            orderBy: { id: "asc" },
+          },
           likes: { select: { userId: true } },
           comments: {
             orderBy: { create_at: "asc" },
@@ -78,7 +82,7 @@ export default async function UserProfilePage({
   }
 
   return (
-    <main className="bg-slate-950 p-6 space-y-6 mx-50">
+    <main className="bg-slate-950 p-6 space-y-6 mx-auto">
       <Navbar />
       <ProfileCard
         user={{
@@ -113,6 +117,8 @@ export default async function UserProfilePage({
                 content: post.content,
                 create_at: post.create_at,
                 userId: post.userId,
+                isPublic: post.isPublic,
+                images: post.images,
                 likes: post.likes,
                 comments: post.comments,
               }}

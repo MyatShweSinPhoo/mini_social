@@ -6,10 +6,18 @@ import jwt from "jsonwebtoken";
 import { prisma } from "@/lib/prisma";
 import Navbar from "./component/navBar/nav";
 import CreatePostForm from "./component/post/PostCreate";
+
 export const instant = false;
 
-export default async function HomePage() {
+interface HomePageProps {
+  searchParams: Promise<{ q?: string }>;
+}
+
+export default async function HomePage({ searchParams }: HomePageProps) {
   await connection();
+  const resolvedParams = await searchParams;
+  const query = resolvedParams.q || "";
+
   const cookieStore = await cookies();
   const token = cookieStore.get("token")?.value;
 
@@ -48,10 +56,15 @@ export default async function HomePage() {
 
   const otherPosts = await prisma.post.findMany({
     where: {
-      userId: {
-        not: userId,
-      },
-      isPublic: true, // 👈 အခြားသူများ၏ Public post များကိုသာ ပြရန် (Private များကို မပြရန်)
+      isPublic: true,
+      ...(query.trim()
+        ? {
+            OR: [
+              { content: { contains: query } },
+              { user: { name: { contains: query } } },
+            ],
+          }
+        : {}),
     },
     orderBy: {
       create_at: "desc",
@@ -64,7 +77,9 @@ export default async function HomePage() {
           img: true,
         },
       },
-      images: true, // 👈 ဒီနေရာတွင် images ကို ဖြည့်စွက်ပေးပါ (ပုံများပေါ်လာရန်)
+      images: {
+        orderBy: { id: "asc" },
+      },
       likes: true,
       comments: {
         include: {
@@ -81,38 +96,57 @@ export default async function HomePage() {
   });
 
   return (
-    <main className="bg-slate-950 p-6 space-y-6 mx-50">
+    <main className="w-full min-h-screen bg-slate-50 text-slate-900 pb-12">
       <Navbar />
-      <CreatePostForm />
-      <div className="space-y-4">
-        {otherPosts.length === 0 ? (
-          <div className="text-center py-12 bg-slate-900 border border-slate-800 rounded-xl space-y-2">
-            <p className="text-slate-300 font-medium">No posts available</p>
-            <p className="text-slate-500 text-sm">
-              When other users create posts, they will appear here.
-            </p>
-          </div>
-        ) : (
-          otherPosts.map((post: any) => (
-            <PostCard
-              key={post.id}
-              post={{
-                id: post.id,
-                content: post.content,
-                create_at: post.create_at,
-                userId: post.userId,
-                likes: post.likes,
-                comments: post.comments,
-              }}
-              user={{
-                id: post.user.id, // 👈 id ကို ပေးပို့လိုက်ခြင်းဖြင့် TypeScript Error ရှင်းသွားပါမည်
-                name: post.user.name || "User",
-                img: post.user.img,
-              }}
-              currentUserId={currentUserId}
-            />
-          ))
+
+      {/* အလယ်ခေါင်တွင် max-w-xl ဖြင့် ပို့စ်တင်ရန်နှင့် ဖိဒ်များ အချိုးကျပေါ်စေရန် */}
+      <div className="max-w-xl mx-auto px-4 pt-6 space-y-6">
+        <CreatePostForm />
+
+        {query.trim() && (
+          <p className="text-xs text-slate-500 px-2">
+            Search results for:{" "}
+            <span className="text-slate-900 font-semibold">
+              &quot;{query}&quot;
+            </span>{" "}
+            ({otherPosts.length} found)
+          </p>
         )}
+
+        <div className="space-y-4">
+          {otherPosts.length === 0 ? (
+            <div className="text-center py-12 bg-white border border-slate-200 rounded-2xl shadow-sm space-y-2">
+              <p className="text-slate-700 font-medium">No posts available</p>
+              <p className="text-slate-400 text-sm">
+                {query.trim()
+                  ? "No posts match your search query."
+                  : "When other users create posts, they will appear here."}
+              </p>
+            </div>
+          ) : (
+            otherPosts.map((post: any) => (
+              <PostCard
+                key={post.id}
+                post={{
+                  id: post.id,
+                  content: post.content,
+                  create_at: post.create_at,
+                  userId: post.userId,
+                  isPublic: post.isPublic,
+                  images: post.images,
+                  likes: post.likes,
+                  comments: post.comments,
+                }}
+                user={{
+                  id: post.user.id,
+                  name: post.user.name || "User",
+                  img: post.user.img,
+                }}
+                currentUserId={currentUserId}
+              />
+            ))
+          )}
+        </div>
       </div>
     </main>
   );

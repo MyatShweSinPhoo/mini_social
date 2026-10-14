@@ -75,10 +75,7 @@ export async function PUT(request: NextRequest) {
   try {
     formData = await request.formData();
   } catch {
-    return NextResponse.json(
-      { error: "Invalid form data" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: "Invalid form data" }, { status: 400 });
   }
 
   const name = formData.get("name");
@@ -132,7 +129,7 @@ export async function PUT(request: NextRequest) {
       await writeFile(imagePath, Buffer.from(await image.arrayBuffer()), {
         flag: "wx",
       });
-      imageUrl = `/profile/${filename}`;
+      imageUrl = filename;
     }
 
     const user = await prisma.user.update({
